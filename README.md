@@ -8,3 +8,5 @@ The movement vectors (flame position and flame power) are generated with pseudor
 
 Video:
 https://www.youtube.com/watch?v=82YVqD8Xl40
+
+![schematic](schem.png)
