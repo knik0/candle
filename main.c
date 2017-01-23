@@ -47,55 +47,16 @@ static inline uint16_t rand()
   return g_lfsr;
 }
 
-
-static uint8_t eeget(uint16_t addr)
-{
-  EEARL = addr;
-  SBI(EECR, EERE);
-  return EEDR;
-}
-
-static void eeput(uint16_t addr, uint8_t data)
-{
-  uint8_t savesreg = SREG;
-
-  asm volatile ("cli");
-
-  EECR = 0;
-  EEARL = addr;
-  EEDR = data;
-
-  SBI(EECR, EEMPE);
-  SBI(EECR, EEPE);
-  while (EECR & (1 << EEPE));
-
-  SREG = savesreg;
-}
-
 enum
 { CFG_MODE = 0x80, CFG_DMAX = 2 };
 static uint8_t g_cfg;
-static void cfg(uint8_t update)
+void cfgup(void)
 {
-  enum
-  { EE_CFG = 2 };
-  g_cfg = eeget(EE_CFG);
-  if (g_cfg == 0xff)
-    g_cfg = 0;
-
-  if ((g_cfg & 3) > CFG_DMAX)
-    g_cfg &= ~3;
-
-  if (update)
-  {
     if ((++g_cfg & 3) > CFG_DMAX)
     {
-      g_cfg ^= CFG_MODE;
-      g_cfg &= ~3;
+	g_cfg ^= CFG_MODE;
+	g_cfg &= ~3;
     }
-
-    eeput(EE_CFG, g_cfg);
-  }
 }
 
 static void candle(void)
@@ -119,53 +80,12 @@ static void candle(void)
     while (g_tcnt)
       asm volatile ("sleep");
   }
-  void showcfg(void)
-  {
-    uint8_t cnt;
-
-    DDRB = 0;
-    out1(0xf0);
-    out2(0xf0);
-
-    for (cnt = 0; cnt < 4; cnt++)
-      sleep(255);
-
-    cnt = 2;
-    if (g_cfg & CFG_MODE)
-      cnt = 4;
-
-    while (cnt)
-    {
-      cnt--;
-
-      sleep(255);
-      sleep(255);
-
-      switch (g_cfg & 3)
-      {
-      case 0:
-	DDRB = M(PB_LED1);
-	break;
-      case 1:
-	DDRB = M(PB_LED2);
-	break;
-      case 2:
-	DDRB = M(PB_LED1) | M(PB_LED2);
-	break;
-      }
-
-      sleep(20);
-      DDRB = 0;
-    }
-
-    DDRB = PORTBMASK;
-  }
-
-  cfg(FALSE);
-  //showcfg();
 
   out1(0);
   out2(0);
+
+  // rnd matcher
+  uint8_t rswitch;
 
   // LED state:
   int16_t pos = 0;
@@ -181,6 +101,11 @@ static void candle(void)
     uint16_t pow2;
 
     r = rand();
+    if (r == 1)
+        rswitch++;
+
+    if ((r & 0xff) == rswitch)
+        cfgup();
 
     // flame power
     powr = ((r >> 2) & 0x1f) + POWMID - 0x0f;
@@ -228,19 +153,13 @@ static void candle(void)
 
     pow2 = ((uint16_t) pow * (uint16_t) pow) >> 8;
 
-    if (!(PINB & M(PINB4)))
-    {
-      cfg(TRUE);
-      showcfg();
-      while (!(PINB & M(PINB4)));
-    }
-
     // wait for sync
     while (g_tcnt)
       asm volatile ("sleep");
     // set delay
     switch (g_cfg & 3)
     {
+#if 1
     case 0:
       g_tcnt = 16;
       break;
@@ -250,6 +169,17 @@ static void candle(void)
     default:
       g_tcnt = 20;
       break;
+#else
+    case 0:
+      g_tcnt = 20;
+      break;
+    case 1:
+      g_tcnt = 30;
+      break;
+    default:
+      g_tcnt = 40;
+      break;
+#endif
     }
 
     out1(((uint16_t) pos * pow2) >> 8);
@@ -286,6 +216,7 @@ int main(void)
 
   g_lfsr = 1;
   g_tcnt = 16;
+  //cfg(TRUE);
   candle();
 
   while (1);
